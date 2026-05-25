@@ -1,0 +1,10 @@
+name: "Frisi PV Automation"
+description: "Colors a light based on solar feed-in power and turns it off when feed-in drops to zero"
+version: "1.0.0"
+slug: "frisi"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+homeassistant_api: true
