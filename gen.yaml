@@ -1,0 +1,19 @@
+# Required when using --validate flag; optional otherwise
+url: "http://homeassistant:8123"
+
+# Auth token for --validate mode; or set HA_AUTH_TOKEN env var
+#ha_auth_token: ""
+
+# Used by --validate to construct the HA app; defaults to zone.home
+home_zone_entity_id: "zone.home"
+
+# Explicit list of entities to expose as Go constants.
+# entity_id: the HA entity ID (domain.name)
+# name: the Go field name to use (PascalCase or snake_case, both work)
+entities:
+  - entity_id: "sensor.powerocean_sysgridpwr"
+    name: "EnergyGridPower"
+  - entity_id: "zone.home"
+    name: "HomeZone"
+  - entity_id: "light.pv_lampe_licht"
+    name: "LightPv"
