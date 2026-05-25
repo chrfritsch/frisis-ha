@@ -1,4 +1,4 @@
-ARG BUILD_FROM=ghcr.io/hassio-addons/base:latest
+ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 
 FROM golang:1.23-alpine AS builder
 WORKDIR /build
