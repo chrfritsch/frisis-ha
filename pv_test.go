@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"testing"
+	"time"
 
 	ga "saml.dev/gome-assistant"
 )
@@ -13,13 +14,24 @@ const testZoneID  = "zone.home"
 // --- mocks ---
 
 type mockLight struct {
-	calls []mockLightCall
-	err   error
+	calls        []mockLightCall
+	turnOffCalls []string
+	err          error
+	notifyOff    chan struct{} // closed on first TurnOff, for timer tests
 }
 
 type mockLightCall struct {
 	entityID    string
 	serviceData map[string]any
+}
+
+func (m *mockLight) TurnOff(entityId string) error {
+	m.turnOffCalls = append(m.turnOffCalls, entityId)
+	if m.notifyOff != nil {
+		close(m.notifyOff)
+		m.notifyOff = nil
+	}
+	return m.err
 }
 
 func (m *mockLight) TurnOn(entityId string, serviceData ...map[string]any) error {
@@ -173,5 +185,69 @@ func TestApplyPVColor_MaxWattClampsToGreen(t *testing.T) {
 	rgb := light.calls[0].serviceData["rgb_color"].([]int)
 	if rgb[0] != 0 {
 		t.Errorf("R = %d at max watts, want 0 (green)", rgb[0])
+	}
+}
+
+// --- pvOffAutomation ---
+
+func TestPVOff_HighFeedIn(t *testing.T) {
+	light := &mockLight{}
+	pvOff := newPVOffAutomation(testLightID, 0)
+	pvOff.onStateChange(light, "500")
+	time.Sleep(10 * time.Millisecond)
+	if len(light.turnOffCalls) != 0 {
+		t.Errorf("expected no TurnOff for high watts, got %d", len(light.turnOffCalls))
+	}
+}
+
+func TestPVOff_LowFeedIn_TurnsOff(t *testing.T) {
+	done := make(chan struct{})
+	light := &mockLight{notifyOff: done}
+	pvOff := newPVOffAutomation(testLightID, 0)
+	pvOff.onStateChange(light, "0")
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("TurnOff not called within timeout")
+	}
+	if light.turnOffCalls[0] != testLightID {
+		t.Errorf("TurnOff called on wrong entity: %s", light.turnOffCalls[0])
+	}
+}
+
+func TestPVOff_LowThenHigh_CancelsTimer(t *testing.T) {
+	light := &mockLight{}
+	pvOff := newPVOffAutomation(testLightID, 50*time.Millisecond)
+	pvOff.onStateChange(light, "0")   // start timer
+	pvOff.onStateChange(light, "500") // cancel before it fires
+	time.Sleep(100 * time.Millisecond)
+	if len(light.turnOffCalls) != 0 {
+		t.Errorf("expected TurnOff cancelled, but it was called %d time(s)", len(light.turnOffCalls))
+	}
+}
+
+func TestPVOff_MultipleLow_OnlyOneTimer(t *testing.T) {
+	done := make(chan struct{})
+	light := &mockLight{notifyOff: done}
+	pvOff := newPVOffAutomation(testLightID, 10*time.Millisecond)
+	pvOff.onStateChange(light, "0") // starts timer
+	pvOff.onStateChange(light, "0") // timer already running, no second timer
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("TurnOff not called within timeout")
+	}
+	if len(light.turnOffCalls) != 1 {
+		t.Errorf("expected exactly 1 TurnOff, got %d", len(light.turnOffCalls))
+	}
+}
+
+func TestPVOff_NonNumericState(t *testing.T) {
+	light := &mockLight{}
+	pvOff := newPVOffAutomation(testLightID, 0)
+	pvOff.onStateChange(light, "unavailable") // must not panic
+	time.Sleep(10 * time.Millisecond)
+	if len(light.turnOffCalls) != 0 {
+		t.Errorf("expected no call for non-numeric state")
 	}
 }

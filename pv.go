@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"sync"
+	"time"
 
 	ga "saml.dev/gome-assistant"
 )
@@ -12,6 +14,10 @@ const maxWatt = 2000.0
 
 type lightController interface {
 	TurnOn(entityId string, serviceData ...map[string]any) error
+}
+
+type lightTurnerOff interface {
+	TurnOff(entityId string) error
 }
 
 type stateGetter interface {
@@ -59,6 +65,54 @@ func hslToRgb(h, s, l float64) [3]int {
 func wattToRGB(watts float64) [3]int {
 	hue := (math.Min(watts, maxWatt) / maxWatt * 100) * 1.2 / 360
 	return hslToRgb(hue, 1, 0.5)
+}
+
+// pvOffAutomation turns off a light when feed-in power stays ≤ 1 W for the
+// configured delay, preventing flicker during brief cloud shadows.
+type pvOffAutomation struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	delay   time.Duration
+	lightID string
+}
+
+func newPVOffAutomation(lightID string, delay time.Duration) *pvOffAutomation {
+	return &pvOffAutomation{lightID: lightID, delay: delay}
+}
+
+// onStateChange is the testable core: starts a timer when watts ≤ 1,
+// cancels it when watts rise above 1 again.
+func (a *pvOffAutomation) onStateChange(light lightTurnerOff, newState string) {
+	watts, err := strconv.ParseFloat(newState, 64)
+	if err != nil {
+		fmt.Printf("pv off: non-numeric state %q\n", newState)
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if watts <= 1 {
+		if a.timer == nil {
+			a.timer = time.AfterFunc(a.delay, func() {
+				if err := light.TurnOff(a.lightID); err != nil {
+					fmt.Printf("pv off error: %v\n", err)
+				}
+				a.mu.Lock()
+				a.timer = nil
+				a.mu.Unlock()
+			})
+		}
+	} else {
+		if a.timer != nil {
+			a.timer.Stop()
+			a.timer = nil
+		}
+	}
+}
+
+func (a *pvOffAutomation) callback(svc *ga.Service, _ ga.State, data ga.EntityData) {
+	a.onStateChange(svc.Light, data.ToState)
 }
 
 // applyPVColor sets lightID's color proportional to feed-in power,

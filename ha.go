@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"frisi/ha/entities"
 
@@ -34,10 +35,16 @@ func main() {
 	}
 	defer app.Cleanup()
 
+	pvOff := newPVOffAutomation(entities.Light.LightPv, time.Minute)
+
 	app.RegisterEntityListeners(
 		ga.NewEntityListener().
 			EntityIds(entities.Sensor.EnergyGridPower).
 			Call(pvEinspeisungColor).
+			Build(),
+		ga.NewEntityListener().
+			EntityIds(entities.Sensor.EnergyGridPower).
+			Call(pvOff.callback).
 			Build(),
 	)
 
