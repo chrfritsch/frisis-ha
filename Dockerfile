@@ -1,6 +1,6 @@
 ARG BUILD_FROM=ghcr.io/home-assistant/base:latest
 
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
