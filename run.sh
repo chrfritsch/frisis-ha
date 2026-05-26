@@ -1,6 +1,5 @@
 #!/usr/bin/with-contenv bashio
 
-export HA_URL="http://homeassistant:8123"
-export HA_AUTH_TOKEN="${SUPERVISOR_TOKEN}"
+export HA_URL="http://supervisor/core/api"
 
 exec /usr/bin/frisi
